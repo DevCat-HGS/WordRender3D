@@ -1,9 +1,9 @@
 """Constructor de mundos 3D controlado con las manos.
 
 Mano derecha (puntero):
-    - Punta del índice ............ mueve el cursor 3D
-    - Pellizco pulgar + índice .... pone un bloque / pulsa botones y colores
-    - Pellizco pulgar + medio ..... quita el bloque señalado
+    - Punta del índice ............ mueve el cursor
+    - Pellizco pulgar + índice .... elige / lanza un clima
+    - Pellizco pulgar + medio ..... vuelve a la brisa
 Mano izquierda (cámara):
     - Pellizco pulgar + índice y mover ....... gira la cámara
     - Pellizco pulgar + medio y subir/bajar .. zoom
@@ -24,8 +24,10 @@ from OpenGL.GLU import gluPerspective, gluLookAt
 
 from clima import SEGUNDOS_DIA, estado_cielo, hora_reloj, campo_estrellas
 from fauna import Fauna, MUERTO
+from frutas import Frutas
 from hand_tracker import HandTracker, PUNTAS
-from mundo import Mundo, PALETA, NOMBRES, CARAS
+from mundo import Mundo, CARAS
+from tiempo import CLIMAS, BRISA, LLUVIA, TORMENTA, NEVADO, TORNADO, Tiempo
 from shaders import (
     SOLIDO_VERT, SOLIDO_FRAG, AGUA_VERT, AGUA_FRAG, ANIMAL_VERT, ANIMAL_FRAG,
     ATRIBUTOS, UNIFORMES, LOC_POS, LOC_NRM, LOC_COL, LOC_AUX,
@@ -217,11 +219,15 @@ class App:
         self.mundo = Mundo()
         self.mundo.generar_terreno(registrar=False)
         self.fauna = Fauna(self.mundo)
-        self.color = 8
+        self.frutas = Frutas(self.mundo)
+        self.tiempo = Tiempo(self.mundo)
+        self.clima_sel = BRISA
+        self.clima_est = self.tiempo.estado()
         self.malla_version = -1
         self.gpu_solido = MallaGPU()
         self.gpu_agua = MallaGPU()
         self.gpu_fauna = MallaGPU(nbuf=3, dinamico=True)
+        self.gpu_frutas = MallaGPU(nbuf=3, dinamico=True)
 
         w, _, d = self.mundo.tam
         self.objetivo = np.array([w / 2, 4.0, d / 2], dtype=np.float32)
@@ -269,9 +275,9 @@ class App:
         ]):
             self.botones.append([texto, pygame.Rect(ANCHO - 186, 16 + i * 46, 170, 40), accion])
 
-        n, lado, sep = len(PALETA) - 1, 52, 8
+        n, lado, sep = len(CLIMAS), 108, 10
         x0 = (ANCHO - (n * lado + (n - 1) * sep)) // 2
-        self.rect_colores = [pygame.Rect(x0 + i * (lado + sep), ALTO - lado - 18, lado, lado) for i in range(n)]
+        self.rect_climas = [pygame.Rect(x0 + i * (lado + sep), ALTO - 62, lado, 50) for i in range(n)]
 
         self.init_gl()
 
@@ -282,7 +288,8 @@ class App:
     def nuevo_terreno(self):
         self.mundo.generar_terreno()
         self.fauna = Fauna(self.mundo)
-        self.avisar("Terreno nuevo y fauna nueva")
+        self.frutas = Frutas(self.mundo)
+        self.avisar("Terreno nuevo, fauna y frutas")
 
     def deshacer(self):
         self.avisar("Deshecho" if self.mundo.deshacer() else "Nada que deshacer")
@@ -291,7 +298,9 @@ class App:
         self.mundo.limpiar()
         self.fauna = Fauna(self.mundo)
         self.fauna.vivo[:] = False
-        self.avisar("Mundo vacío: ¡a construir!")
+        self.frutas = Frutas(self.mundo)
+        self.frutas.vivo[:] = False
+        self.avisar("Mundo vacío")
 
     def guardar(self):
         self.mundo.guardar(ARCHIVO_MUNDO)
@@ -301,6 +310,7 @@ class App:
         try:
             self.mundo.cargar(ARCHIVO_MUNDO)
             self.fauna = Fauna(self.mundo)
+            self.frutas = Frutas(self.mundo)
             self.avisar("Mundo cargado")
         except FileNotFoundError:
             self.avisar("Todavía no hay un mundo guardado")
@@ -331,10 +341,15 @@ class App:
         for i, (_, rect, _) in enumerate(self.botones):
             if rect.collidepoint(pos):
                 return ("boton", i)
-        for i, rect in enumerate(self.rect_colores):
+        for i, rect in enumerate(self.rect_climas):
             if rect.collidepoint(pos):
-                return ("color", i + 1)
+                return ("clima", i)
         return None
+
+    def elegir_clima(self, i):
+        self.clima_sel = int(i)
+        self.tiempo.activar(self.clima_sel)
+        self.avisar(CLIMAS[self.clima_sel]["nombre"] + "  —  " + CLIMAS[self.clima_sel]["desc"])
 
     def poner_en(self, pos):
         ui = self.ui_en(pos)
@@ -342,17 +357,14 @@ class App:
             if ui[0] == "boton":
                 self.botones[ui[1]][2]()
             else:
-                self.color = ui[1]
-                self.avisar(f"Color: {NOMBRES[self.color]}")
+                self.elegir_clima(ui[1])
             return
-        _, celda = self.raycast_pantalla(pos)
-        self.mundo.poner(celda, self.color)
+        self.elegir_clima(self.clima_sel)
 
     def quitar_en(self, pos):
         if self.ui_en(pos):
             return
-        bloque, _ = self.raycast_pantalla(pos)
-        self.mundo.quitar(bloque)
+        self.elegir_clima(BRISA)
 
     # ------------------------------------------------------------------ cámara
     def base_camara(self):
@@ -417,9 +429,8 @@ class App:
         k = ev.key
         if k == K_ESCAPE:
             self.corriendo = False
-        elif pygame.K_1 <= k <= pygame.K_9:
-            self.color = k - pygame.K_0
-            self.avisar(f"Color: {NOMBRES[self.color]}")
+        elif pygame.K_1 <= k <= pygame.K_6:
+            self.elegir_clima(k - pygame.K_1)
         elif k == pygame.K_t:
             self.nuevo_terreno()
         elif k == pygame.K_z:
@@ -594,6 +605,8 @@ class App:
         self.actualizar_mallas()
         self.dibujar_mundo()
         self.dibujar_fauna()
+        self.dibujar_frutas()
+        self.dibujar_tiempo()
         self.dibujar_seleccion()
         self.modo_2d()
         self.dibujar_hud()
@@ -715,6 +728,53 @@ class App:
             return
         self._dibujar_malla_basica(self.gpu_fauna, opaco=True)
 
+    def dibujar_frutas(self):
+        if not self.gpu_frutas.n:
+            return
+        if self.shaders_ok and self.prog_fauna:
+            glUseProgram(self.prog_fauna)
+            self._luz_uniforms(self.u_fauna)
+            glEnable(GL_CULL_FACE)
+            self.gpu_frutas.enlazar()
+            self.gpu_frutas.dibujar()
+            MallaGPU.desenlazar()
+            glUseProgram(0)
+            return
+        self._dibujar_malla_basica(self.gpu_frutas, opaco=True)
+
+    def dibujar_tiempo(self):
+        glUseProgram(0)
+        glDisable(GL_CULL_FACE)
+        glDepthMask(GL_FALSE)
+        p, cols = self.tiempo.pos, self.tiempo.col
+        c = self.tiempo.clima
+        if c in (LLUVIA, TORMENTA):
+            glBegin(GL_LINES)
+            largo = 1.6 if c == TORMENTA else 1.15
+            for i in range(0, len(p), 2):
+                glColor4f(*cols[i])
+                glVertex3f(*p[i])
+                glVertex3f(p[i, 0], p[i, 1] - largo, p[i, 2])
+            glEnd()
+        else:
+            glPointSize(3.2 if c == NEVADO else 2.4)
+            glBegin(GL_POINTS)
+            for i in range(0, len(p), 2):
+                glColor4f(*cols[i])
+                glVertex3f(*p[i])
+            glEnd()
+            glPointSize(1.0)
+        if c == TORNADO:
+            t = self.tiempo.tornado
+            glColor4f(0.35, 0.30, 0.24, 0.45)
+            glBegin(GL_LINE_STRIP)
+            for i in range(48):
+                a = i * 0.55 + self.tiempo.ang
+                r = 0.6 + i * 0.09
+                glVertex3f(t[0] + math.cos(a) * r, 0.4 + i * 0.38, t[2] + math.sin(a) * r)
+            glEnd()
+        glDepthMask(GL_TRUE)
+
     def _dibujar_malla_basica(self, malla, opaco):
         if not malla.n:
             return
@@ -756,23 +816,7 @@ class App:
         glEnd()
 
     def dibujar_seleccion(self):
-        glUseProgram(0)
-        glDisable(GL_CULL_FACE)
-        bloque, celda = self.hover
-        if self.modo_quitar():
-            if bloque:
-                glDepthMask(GL_FALSE)
-                self.cubo_solido(bloque, (1.0, 0.2, 0.2, 0.35))
-                glDepthMask(GL_TRUE)
-                self.cubo_alambre(bloque, (1.0, 0.25, 0.25, 1.0))
-            return
-        if bloque:
-            self.cubo_alambre(bloque, (1, 1, 1, 0.9), grosor=2.0)
-        if celda and self.mundo.dentro(*celda):
-            glDepthMask(GL_FALSE)
-            self.cubo_solido(celda, (*PALETA[self.color], 0.5))
-            glDepthMask(GL_TRUE)
-            self.cubo_alambre(celda, (1, 1, 0.3, 1.0), grosor=2.0, margen=0.0)
+        return
 
     # ------------------------------------------------------------------ HUD
     def rect(self, x, y, w, h, color):
@@ -854,15 +898,14 @@ class App:
             lineas = [
                 ("MANO DERECHA  (puntero)" if self.mano_puntero == "Right" else "MANO IZQUIERDA  (puntero)", True),
                 ("  Punta del índice: mueve el cursor", False),
-                ("  Pellizco pulgar + índice: poner bloque / botón", False),
-                ("  Pellizco pulgar + medio: quitar bloque", False),
+                ("  Pellizco pulgar + índice: lanzar el clima", False),
+                ("  Pellizco pulgar + medio: volver a la brisa", False),
                 ("MANO IZQUIERDA  (cámara)" if self.mano_puntero == "Right" else "MANO DERECHA  (cámara)", True),
                 ("  Pellizco pulgar + índice y mover: girar", False),
                 ("  Pellizco pulgar + medio y subir/bajar: zoom", False),
-                ("Cielo: N pausa  V día  B noche  ,/. velocidad", False),
-                ("12 animales: comen, cazan, huyen y se reproducen", False),
-                ("Teclas: 1-9 color  T terreno  Z deshacer  C limpiar", False),
-                ("G guardar  L cargar  M manos  P cámara  H ayuda", False),
+                ("Climas: 1 brisa  2 lluvia  3 tormenta", False),
+                ("4 sequía  5 nevado  6 tornado", False),
+                ("N pausa  V día  B noche  T terreno  H ayuda", False),
             ]
             self.rect(12, 12, 430, 16 + len(lineas) * 23, (0, 0, 0, 0.45))
             for i, (linea, titulo) in enumerate(lineas):
@@ -875,18 +918,22 @@ class App:
             self.marco(r.x, r.y, r.w, r.h, (1, 1, 1, 0.6 if activo else 0.25))
             self.texto(nombre, r.centerx, r.centery, fuente=self.fuente_bold, centro=True)
 
-        for i, r in enumerate(self.rect_colores):
-            c = i + 1
-            elegido = c == self.color
-            crece = 6 if elegido else (3 if ui_hover == ("color", c) else 0)
-            self.rect(r.x - crece, r.y - crece, r.w + 2 * crece, r.h + 2 * crece, (*PALETA[c], 1.0))
+        for i, r in enumerate(self.rect_climas):
+            clima = CLIMAS[i]
+            elegido = i == self.clima_sel
+            crece = 5 if elegido else (2 if ui_hover == ("clima", i) else 0)
+            self.rect(r.x - crece, r.y - crece, r.w + 2 * crece, r.h + 2 * crece, (*clima["color"], 0.95))
             self.marco(r.x - crece, r.y - crece, r.w + 2 * crece, r.h + 2 * crece,
-                       (1, 1, 1, 1) if elegido else (0, 0, 0, 0.5), 3.0 if elegido else 1.5)
-            self.texto(str(c), r.x + 4 - crece, r.y + 1 - crece, (0, 0, 0))
-        r0 = self.rect_colores[0]
-        self.texto(f"Bloque: {NOMBRES[self.color]}", ANCHO / 2, r0.y - 22, fuente=self.fuente_bold, centro=True)
+                       (1, 1, 1, 1) if elegido else (0, 0, 0, 0.4), 3.0 if elegido else 1.5)
+            oscuro = clima["color"][0] + clima["color"][1] > 1.4
+            self.texto(clima["nombre"], r.centerx, r.centery, (20, 20, 20) if oscuro else (255, 255, 255),
+                       self.fuente_bold, centro=True)
+        self.texto(f"Clima: {CLIMAS[self.clima_sel]['nombre']}", ANCHO / 2, self.rect_climas[0].y - 20,
+                   fuente=self.fuente_bold, centro=True)
+        if self.tiempo.flash > 0.2:
+            self.rect(0, 0, ANCHO, ALTO, (1, 1, 1, 0.18 * self.tiempo.flash))
 
-        reloj = f"{hora_reloj(self.hora)}  {self.cielo.nombre}"
+        reloj = f"{hora_reloj(self.hora)}  {self.cielo.nombre}  ·  {self.tiempo.nombre}"
         if not self.ciclo_activo:
             reloj += "  (pausa)"
         self.texto(reloj, ANCHO / 2, 18, (255, 230, 160), self.fuente_bold, centro=True)
@@ -919,8 +966,8 @@ class App:
 
         vivos = int(np.sum(self.fauna.vivo & (self.fauna.estado != MUERTO)))
         manos = int(self.puntero.visible) + int(self.camara.visible)
-        self.texto(f"{self.reloj.get_fps():.0f} FPS  |  {vivos} animales  |  manos: {manos}",
-                   ANCHO - 16 - 310, ALTO - 26, (230, 230, 230))
+        self.texto(f"{self.reloj.get_fps():.0f} FPS  |  {vivos} animales  |  {self.frutas.conteo()} frutas",
+                   ANCHO - 16 - 360, ALTO - 26, (230, 230, 230))
         if self.mostrar_ayuda:
             lineas_f = self.fauna.conteo()
             self.rect(12, 268, 210, 16 + len(lineas_f) * 18, (0, 0, 0, 0.42))
@@ -958,7 +1005,7 @@ class App:
                 self.circulo(x, y, 12 + 26 * progreso,
                              (1.0, 0.35, 0.35, 0.9) if quitar else (0.3, 0.95, 1.0, 0.9), relleno=False, grosor=3)
             self.circulo(x, y, 5, (1, 1, 1, 1))
-            self.texto("Quitar" if quitar else "Puntero", x + 18, y + 8, (255, 255, 255))
+            self.texto("Brisa" if quitar else CLIMAS[self.clima_sel]["nombre"], x + 18, y + 8, (255, 255, 255))
 
     # ------------------------------------------------------------------ bucle
     def actualizar_hover(self):
@@ -973,11 +1020,16 @@ class App:
                 if self.ciclo_activo:
                     self.hora = (self.hora + dt / SEGUNDOS_DIA * self.vel_ciclo) % 1.0
                 self.cielo = estado_cielo(self.hora)
+                self.clima_est = self.tiempo.actualizar(dt)
+                self.tiempo.teñir(self.cielo)
                 self.procesar_eventos(dt)
                 self.procesar_manos(time.perf_counter())
                 ojo = self.base_camara()[0]
-                self.fauna.actualizar(dt, cam=ojo)
-                self.gpu_fauna.cargar(*self.fauna.malla_visible(ojo, radio=max(70.0, self.dist * 1.15)))
+                self.fauna.actualizar(dt, cam=ojo, clima=self.clima_est)
+                self.frutas.actualizar(dt, self.clima_est, self.fauna)
+                radio = max(70.0, self.dist * 1.15)
+                self.gpu_fauna.cargar(*self.fauna.malla_visible(ojo, radio=radio))
+                self.gpu_frutas.cargar(*self.frutas.malla_visible(ojo, radio=radio))
                 self.actualizar_hover()
                 self.dibujar()
         finally:

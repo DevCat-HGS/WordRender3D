@@ -69,50 +69,131 @@ def _caja(x0, y0, z0, x1, y1, z1, color):
 
 
 def _modelo(esp: Especie):
+    """Cada especie tiene silueta propia: orejas, cola, pico, cuernos, alas."""
     c, e = esp.cuerpo, esp.extra
-    s = 1.0
     pos, nrm, col = [], [], []
 
-    def add(p, n, k):
-        pos.extend(p)
-        nrm.extend(n)
-        col.extend(k)
+    def add(*args):
+        pos.extend(args[0])
+        nrm.extend(args[1])
+        col.extend(args[2])
 
-    if esp.nombre == "Mariposa":
-        add(*_caja(-0.05, 0.08, -0.12, 0.05, 0.16, 0.12, e))
-        add(*_caja(-0.32, 0.10, -0.08, -0.05, 0.14, 0.08, c))
-        add(*_caja(0.05, 0.10, -0.08, 0.32, 0.14, 0.08, c))
-    elif esp.nombre == "Pez":
-        add(*_caja(-0.08, 0.02, -0.22, 0.08, 0.16, 0.18, c))
-        add(*_caja(-0.04, 0.06, 0.18, 0.04, 0.14, 0.28, e))
-        add(*_caja(-0.02, 0.16, -0.04, 0.02, 0.24, 0.06, e))
-    elif esp.nombre == "Águila":
-        add(*_caja(-0.08, 0.10, -0.18, 0.08, 0.20, 0.16, c))
-        add(*_caja(-0.06, 0.12, 0.16, 0.06, 0.22, 0.28, c))
-        add(*_caja(-0.42, 0.14, -0.06, -0.08, 0.17, 0.10, e))
-        add(*_caja(0.08, 0.14, -0.06, 0.42, 0.17, 0.10, e))
-    else:
-        largo = 0.38 if esp.nombre in ("Ciervo", "Lobo", "Oso", "Jabalí") else 0.30
-        alto = 0.22 if esp.nombre != "Oso" else 0.26
-        add(*_caja(-0.14, 0.12, -largo, 0.14, 0.12 + alto, largo * 0.55, c))
-        add(*_caja(-0.10, 0.16, largo * 0.50, 0.10, 0.16 + alto * 0.85, largo * 0.95, e if esp.nombre == "Pato" else c))
-        if esp.nombre == "Conejo":
-            add(*_caja(-0.08, 0.34, 0.18, -0.03, 0.50, 0.24, e))
-            add(*_caja(0.03, 0.34, 0.18, 0.08, 0.50, 0.24, e))
-        if esp.nombre == "Ciervo":
-            add(*_caja(-0.08, 0.38, 0.22, -0.04, 0.58, 0.26, e))
-            add(*_caja(0.04, 0.38, 0.22, 0.08, 0.58, 0.26, e))
-        if esp.nombre == "Pato":
-            add(*_caja(-0.03, 0.28, 0.28, 0.03, 0.32, 0.42, (0.80, 0.50, 0.10)))
-        pata_y1 = 0.12
-        for sx, sz in ((-0.09, -largo * 0.6), (0.09, -largo * 0.6), (-0.09, largo * 0.25), (0.09, largo * 0.25)):
-            add(*_caja(sx - 0.03, 0.0, sz - 0.03, sx + 0.03, pata_y1, sz + 0.03, e))
-        add(*_caja(-0.03, 0.16, -largo - 0.12, 0.03, 0.22, -largo, e))
+    def patas(pts, y1=0.14, gro=0.035, color=None):
+        color = color or e
+        for sx, sz in pts:
+            add(*_caja(sx - gro, 0.0, sz - gro, sx + gro, y1, sz + gro, color))
 
-    p = np.array(pos, dtype=np.float32) * s
-    n = np.array(nrm, dtype=np.float32)
-    k = np.array(col, dtype=np.float32)
-    return p, n, k
+    nombre = esp.nombre
+    if nombre == "Mariposa":
+        add(*_caja(-0.04, 0.10, -0.14, 0.04, 0.18, 0.14, e))
+        add(*_caja(-0.03, 0.12, 0.12, 0.03, 0.16, 0.22, (0.15, 0.10, 0.08)))
+        add(*_caja(-0.40, 0.12, -0.02, -0.04, 0.15, 0.18, c))
+        add(*_caja(-0.34, 0.11, -0.16, -0.06, 0.14, 0.00, (0.15, 0.08, 0.08)))
+        add(*_caja(0.04, 0.12, -0.02, 0.40, 0.15, 0.18, c))
+        add(*_caja(0.06, 0.11, -0.16, 0.34, 0.14, 0.00, (0.15, 0.08, 0.08)))
+        add(*_caja(-0.02, 0.16, 0.18, -0.01, 0.28, 0.22, (0.10, 0.08, 0.06)))
+        add(*_caja(0.01, 0.16, 0.18, 0.02, 0.28, 0.22, (0.10, 0.08, 0.06)))
+    elif nombre == "Rana":
+        add(*_caja(-0.16, 0.06, -0.14, 0.16, 0.22, 0.16, c))
+        add(*_caja(-0.12, 0.18, 0.10, -0.04, 0.28, 0.20, c))
+        add(*_caja(0.04, 0.18, 0.10, 0.12, 0.28, 0.20, c))
+        add(*_caja(-0.10, 0.24, 0.14, -0.06, 0.30, 0.20, (0.95, 0.90, 0.20)))
+        add(*_caja(0.06, 0.24, 0.14, 0.10, 0.30, 0.20, (0.95, 0.90, 0.20)))
+        add(*_caja(-0.22, 0.00, -0.16, -0.10, 0.08, 0.02, e))
+        add(*_caja(0.10, 0.00, -0.16, 0.22, 0.08, 0.02, e))
+        add(*_caja(-0.14, 0.00, 0.08, -0.06, 0.07, 0.18, e))
+        add(*_caja(0.06, 0.00, 0.08, 0.14, 0.07, 0.18, e))
+    elif nombre == "Ratón":
+        add(*_caja(-0.10, 0.06, -0.12, 0.10, 0.20, 0.14, c))
+        add(*_caja(-0.08, 0.10, 0.12, 0.08, 0.20, 0.22, c))
+        add(*_caja(-0.14, 0.18, 0.10, -0.06, 0.30, 0.18, e))
+        add(*_caja(0.06, 0.18, 0.10, 0.14, 0.30, 0.18, e))
+        add(*_caja(-0.03, 0.12, 0.20, 0.03, 0.16, 0.26, (0.90, 0.55, 0.55)))
+        add(*_caja(-0.02, 0.10, -0.28, 0.02, 0.14, -0.12, e))
+        patas(((-0.07, -0.08), (0.07, -0.08), (-0.07, 0.08), (0.07, 0.08)), 0.07, 0.025)
+    elif nombre == "Conejo":
+        add(*_caja(-0.14, 0.08, -0.14, 0.14, 0.28, 0.16, c))
+        add(*_caja(-0.10, 0.14, 0.12, 0.10, 0.28, 0.26, c))
+        add(*_caja(-0.10, 0.28, 0.14, -0.04, 0.52, 0.20, e))
+        add(*_caja(0.04, 0.28, 0.14, 0.10, 0.52, 0.20, e))
+        add(*_caja(-0.08, 0.10, -0.20, 0.08, 0.22, -0.14, (0.95, 0.92, 0.90)))
+        add(*_caja(-0.03, 0.16, 0.24, 0.03, 0.20, 0.30, (0.90, 0.60, 0.60)))
+        patas(((-0.09, -0.10), (0.09, -0.10), (-0.09, 0.10), (0.09, 0.10)), 0.09, 0.03)
+    elif nombre == "Pez":
+        add(*_caja(-0.08, 0.04, -0.20, 0.08, 0.18, 0.16, c))
+        add(*_caja(-0.05, 0.08, 0.16, 0.05, 0.16, 0.24, c))
+        add(*_caja(-0.02, 0.06, 0.22, 0.02, 0.18, 0.34, e))
+        add(*_caja(-0.01, 0.18, -0.04, 0.01, 0.28, 0.08, e))
+        add(*_caja(-0.16, 0.08, -0.04, -0.08, 0.14, 0.08, e))
+        add(*_caja(0.08, 0.08, -0.04, 0.16, 0.14, 0.08, e))
+        add(*_caja(0.03, 0.12, 0.18, 0.06, 0.15, 0.22, (0.05, 0.05, 0.05)))
+    elif nombre == "Pato":
+        add(*_caja(-0.12, 0.10, -0.16, 0.12, 0.26, 0.14, (0.92, 0.92, 0.90)))
+        add(*_caja(-0.08, 0.18, 0.12, 0.08, 0.30, 0.24, (0.90, 0.90, 0.88)))
+        add(*_caja(-0.03, 0.20, 0.22, 0.03, 0.24, 0.36, (0.95, 0.55, 0.08)))
+        add(*_caja(-0.10, 0.22, -0.06, 0.10, 0.28, 0.08, (0.12, 0.12, 0.14)))
+        patas(((-0.07, -0.06), (0.07, -0.06), (-0.07, 0.08), (0.07, 0.08)), 0.10, 0.03, (0.95, 0.55, 0.08))
+    elif nombre == "Ciervo":
+        add(*_caja(-0.12, 0.22, -0.28, 0.12, 0.40, 0.16, c))
+        add(*_caja(-0.09, 0.26, 0.14, 0.09, 0.42, 0.30, c))
+        add(*_caja(-0.10, 0.40, 0.20, -0.05, 0.62, 0.24, e))
+        add(*_caja(-0.16, 0.52, 0.18, -0.05, 0.56, 0.26, e))
+        add(*_caja(0.05, 0.40, 0.20, 0.10, 0.62, 0.24, e))
+        add(*_caja(0.05, 0.52, 0.18, 0.16, 0.56, 0.26, e))
+        add(*_caja(-0.04, 0.28, -0.36, 0.04, 0.34, -0.28, e))
+        patas(((-0.08, -0.20), (0.08, -0.20), (-0.08, 0.10), (0.08, 0.10)), 0.22, 0.03)
+    elif nombre == "Jabalí":
+        add(*_caja(-0.16, 0.12, -0.22, 0.16, 0.34, 0.16, c))
+        add(*_caja(-0.10, 0.14, 0.14, 0.10, 0.28, 0.32, c))
+        add(*_caja(-0.06, 0.16, 0.30, 0.06, 0.22, 0.40, e))
+        add(*_caja(-0.10, 0.14, 0.34, -0.06, 0.18, 0.42, (0.92, 0.90, 0.82)))
+        add(*_caja(0.06, 0.14, 0.34, 0.10, 0.18, 0.42, (0.92, 0.90, 0.82)))
+        add(*_caja(-0.12, 0.30, 0.18, -0.06, 0.40, 0.24, e))
+        add(*_caja(0.06, 0.30, 0.18, 0.12, 0.40, 0.24, e))
+        add(*_caja(-0.04, 0.18, -0.30, 0.04, 0.26, -0.22, e))
+        patas(((-0.10, -0.14), (0.10, -0.14), (-0.10, 0.08), (0.10, 0.08)), 0.12, 0.04)
+    elif nombre == "Zorro":
+        add(*_caja(-0.10, 0.12, -0.20, 0.10, 0.28, 0.14, c))
+        add(*_caja(-0.08, 0.14, 0.12, 0.08, 0.28, 0.26, c))
+        add(*_caja(-0.08, 0.14, 0.10, 0.08, 0.24, 0.22, (0.96, 0.94, 0.90)))
+        add(*_caja(-0.12, 0.26, 0.16, -0.04, 0.40, 0.22, c))
+        add(*_caja(0.04, 0.26, 0.16, 0.12, 0.40, 0.22, c))
+        add(*_caja(-0.06, 0.10, -0.38, 0.06, 0.22, -0.20, c))
+        add(*_caja(-0.04, 0.12, -0.42, 0.04, 0.20, -0.36, (0.96, 0.94, 0.90)))
+        add(*_caja(-0.02, 0.16, 0.24, 0.02, 0.20, 0.30, (0.15, 0.10, 0.08)))
+        patas(((-0.07, -0.12), (0.07, -0.12), (-0.07, 0.08), (0.07, 0.08)), 0.12, 0.03)
+    elif nombre == "Lobo":
+        add(*_caja(-0.12, 0.16, -0.24, 0.12, 0.34, 0.14, c))
+        add(*_caja(-0.09, 0.18, 0.12, 0.09, 0.34, 0.28, c))
+        add(*_caja(-0.05, 0.20, 0.26, 0.05, 0.28, 0.36, e))
+        add(*_caja(-0.12, 0.32, 0.16, -0.04, 0.46, 0.22, e))
+        add(*_caja(0.04, 0.32, 0.16, 0.12, 0.46, 0.22, e))
+        add(*_caja(-0.05, 0.18, -0.38, 0.05, 0.28, -0.24, c))
+        add(*_caja(-0.03, 0.22, 0.32, 0.03, 0.26, 0.38, (0.08, 0.08, 0.08)))
+        patas(((-0.08, -0.16), (0.08, -0.16), (-0.08, 0.08), (0.08, 0.08)), 0.16, 0.035)
+    elif nombre == "Águila":
+        add(*_caja(-0.08, 0.14, -0.16, 0.08, 0.24, 0.14, c))
+        add(*_caja(-0.07, 0.16, 0.12, 0.07, 0.26, 0.26, (0.92, 0.90, 0.86)))
+        add(*_caja(-0.03, 0.16, 0.24, 0.03, 0.20, 0.34, (0.95, 0.72, 0.12)))
+        add(*_caja(-0.48, 0.16, -0.08, -0.08, 0.20, 0.12, e))
+        add(*_caja(0.08, 0.16, -0.08, 0.48, 0.20, 0.12, e))
+        add(*_caja(-0.04, 0.14, -0.28, 0.04, 0.22, -0.16, c))
+        add(*_caja(-0.05, 0.10, 0.06, -0.02, 0.14, 0.12, (0.90, 0.70, 0.15)))
+        add(*_caja(0.02, 0.10, 0.06, 0.05, 0.14, 0.12, (0.90, 0.70, 0.15)))
+    else:  # Oso
+        add(*_caja(-0.20, 0.12, -0.22, 0.20, 0.40, 0.16, c))
+        add(*_caja(-0.14, 0.16, 0.14, 0.14, 0.38, 0.32, c))
+        add(*_caja(-0.06, 0.18, 0.30, 0.06, 0.26, 0.40, e))
+        add(*_caja(-0.16, 0.36, 0.18, -0.08, 0.48, 0.26, c))
+        add(*_caja(0.08, 0.36, 0.18, 0.16, 0.48, 0.26, c))
+        add(*_caja(-0.08, 0.20, -0.30, 0.08, 0.32, -0.22, c))
+        patas(((-0.12, -0.14), (0.12, -0.14), (-0.12, 0.08), (0.12, 0.08)), 0.13, 0.05)
+
+    return (
+        np.array(pos, dtype=np.float32),
+        np.array(nrm, dtype=np.float32),
+        np.array(col, dtype=np.float32),
+    )
 
 
 MODELOS = [_modelo(e) for e in ESPECIES]
@@ -197,7 +278,7 @@ class Fauna:
         out.sort()
         return out
 
-    def actualizar(self, dt, cam=None):
+    def actualizar(self, dt, cam=None, clima=None):
         if self.n == 0:
             return
         dt = min(dt, 0.05)
@@ -206,6 +287,23 @@ class Fauna:
         suelo = self.mundo.altura
         agua = self.mundo.agua_sup
         rng = self.rng
+        vel_clima = 0.62 if (clima and clima.frio) else 1.0
+        hambre_extra = 0.55 if (clima and clima.sequia) else 0.0
+        if clima is not None:
+            vivos = self.vivo & (self.estado != MUERTO)
+            self.pos[vivos, 0] += clima.viento[0] * dt * 0.12
+            self.pos[vivos, 2] += clima.viento[2] * dt * 0.12
+            if clima.tornado is not None:
+                dlt = self.pos[vivos] - clima.tornado
+                r2 = dlt[:, 0] ** 2 + dlt[:, 2] ** 2
+                near = r2 < 64.0
+                if np.any(near):
+                    idx = np.nonzero(vivos)[0][near]
+                    pull = clima.tornado - self.pos[idx]
+                    self.pos[idx, 0] += pull[:, 0] * dt * 1.8
+                    self.pos[idx, 2] += pull[:, 2] * dt * 1.8
+                    self.pos[idx, 1] += dt * 2.4
+                    self.vida[idx] -= dt * 4.0
 
         # Los lejanos a la cámara se actualizan más barato.
         if cam is not None:
@@ -228,7 +326,7 @@ class Fauna:
             if not self.vivo[i]:
                 continue
 
-            self.hambre[i] += dt * (0.9 if e.dieta == "carne" else 0.55)
+            self.hambre[i] += dt * ((0.9 if e.dieta == "carne" else 0.55) + hambre_extra)
             if self.vida[i] <= 0 or self.hambre[i] > e.hambre_t:
                 self.estado[i] = MUERTO
                 self.vida[i] = 0
@@ -260,7 +358,10 @@ class Fauna:
                     presa = j
 
             dest = None
-            if depredador is not None:
+            if clima is not None and clima.peligro and rng.random() < 0.04 and not e.vuela:
+                dest = self.pos[i] + rng.normal(0, 8, 3)
+                self.estado[i] = HUIR
+            elif depredador is not None:
                 self.estado[i] = HUIR
                 away = self.pos[i] - self.pos[depredador]
                 dest = self.pos[i] + away
@@ -305,7 +406,7 @@ class Fauna:
                 if nrm > 0.05:
                     dir3 /= nrm
                     self.yaw[i] = float(np.arctan2(dir3[2], dir3[0]))
-                    rap = e.vel * (1.45 if self.estado[i] == HUIR else 1.0)
+                    rap = e.vel * vel_clima * (1.45 if self.estado[i] == HUIR else 1.0)
                     self.pos[i, 0] += dir3[0] * rap * dt
                     self.pos[i, 2] += dir3[2] * rap * dt
 
