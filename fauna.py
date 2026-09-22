@@ -198,6 +198,13 @@ def _modelo(esp: Especie):
 
 MODELOS = [_modelo(e) for e in ESPECIES]
 
+# Vértices de alas (índices) no hacen falta: el aleteo se hace por altura y balanceo.
+
+
+def _lerp_ang(a, b, t):
+    d = (b - a + np.pi) % (2 * np.pi) - np.pi
+    return float(a + d * t)
+
 
 class Fauna:
     def __init__(self, mundo, semilla=None):
@@ -215,6 +222,8 @@ class Fauna:
         self.pos = np.zeros((n, 3), np.float32)
         self.vel = np.zeros((n, 3), np.float32)
         self.yaw = self.rng.random(n).astype(np.float32) * np.float32(np.pi * 2)
+        self.yaw_obj = self.yaw.copy()
+        self.wander_ang = self.rng.random(n).astype(np.float32) * np.float32(np.pi * 2)
         self.hambre = self.rng.uniform(4, 12, n).astype(np.float32)
         self.vida = np.array([ESPECIES[int(i)].vida for i in self.esp], np.float32)
         self.estado = np.zeros(n, np.int32)
@@ -222,6 +231,9 @@ class Fauna:
         self.cd = np.zeros(n, np.float32)
         self.objetivo = np.full(n, -1, np.int32)
         self.vivo = np.ones(n, np.bool_)
+        self.rapidez = np.zeros(n, np.float32)
+        self.y_suelo = np.zeros(n, np.float32)
+        self.salto = np.zeros(n, np.float32)
         self._colocar()
 
     def _colocar(self):
@@ -250,6 +262,7 @@ class Fauna:
             else:
                 x, z, y = w * 0.5, d * 0.5, 4.0
             self.pos[i] = (x, y, z)
+            self.y_suelo[i] = y
 
     def _hash(self):
         celdas = {}
@@ -312,16 +325,19 @@ class Fauna:
         else:
             activos = np.ones(self.n, np.bool_)
 
-        self.fase += dt * 8.0
         self.cd = np.maximum(self.cd - dt, 0.0)
+        self.salto = np.maximum(self.salto - dt, 0.0)
 
         for i in range(self.n):
             e = ESPECIES[int(self.esp[i])]
             if self.estado[i] == MUERTO:
+                self.vel[i] *= 0.2
                 self.hambre[i] += dt
                 if self.hambre[i] > 18:
                     self.vivo[i] = False
                     self.pos[i, 1] = -50
+                else:
+                    self._asentar(i, e, suelo, agua, dt)
                 continue
             if not self.vivo[i]:
                 continue
@@ -331,12 +347,15 @@ class Fauna:
                 self.estado[i] = MUERTO
                 self.vida[i] = 0
                 self.hambre[i] = 0
+                self.vel[i] = 0
                 continue
 
             if not activos[i]:
-                self.pos[i, 0] = np.clip(self.pos[i, 0] + np.cos(self.yaw[i]) * e.vel * 0.25 * dt, 1.2, w - 2.2)
-                self.pos[i, 2] = np.clip(self.pos[i, 2] + np.sin(self.yaw[i]) * e.vel * 0.25 * dt, 1.2, d - 2.2)
-                self._poner_altura(i, e, suelo, agua)
+                self.wander_ang[i] += (rng.random() - 0.5) * 1.8 * dt
+                self.yaw[i] += (self.wander_ang[i] - self.yaw[i]) * 0.4 * dt
+                self.pos[i, 0] = np.clip(self.pos[i, 0] + np.cos(self.yaw[i]) * e.vel * 0.18 * dt, 1.2, w - 2.2)
+                self.pos[i, 2] = np.clip(self.pos[i, 2] + np.sin(self.yaw[i]) * e.vel * 0.18 * dt, 1.2, d - 2.2)
+                self._asentar(i, e, suelo, agua, dt)
                 continue
 
             cerca = self._cerca(celdas, ix, iz, i, e.vision)
@@ -358,19 +377,24 @@ class Fauna:
                     presa = j
 
             dest = None
+            rap_obj = e.vel * vel_clima
             if clima is not None and clima.peligro and rng.random() < 0.04 and not e.vuela:
                 dest = self.pos[i] + rng.normal(0, 8, 3)
                 self.estado[i] = HUIR
+                rap_obj *= 1.45
             elif depredador is not None:
                 self.estado[i] = HUIR
                 away = self.pos[i] - self.pos[depredador]
                 dest = self.pos[i] + away
+                rap_obj *= 1.55
             elif e.dieta in ("carne", "omni") and self.hambre[i] > e.hambre_t * 0.35 and presa is not None:
                 self.estado[i] = CAZAR
                 dest = self.pos[presa]
                 self.objetivo[i] = presa
+                rap_obj *= 1.15
                 if np.linalg.norm(self.pos[presa] - self.pos[i]) < 0.55 + e.escala:
                     self.estado[i] = ATACAR
+                    rap_obj *= 0.35
                     if self.cd[i] <= 0:
                         self.vida[presa] -= e.dano
                         self.cd[i] = 0.45
@@ -381,59 +405,101 @@ class Fauna:
                             self._reproducir(i)
             elif carroña is not None and self.hambre[i] > 6:
                 dest = self.pos[carroña]
+                self.estado[i] = CAZAR
                 if np.linalg.norm(self.pos[carroña] - self.pos[i]) < 0.7:
                     self.hambre[i] = max(0.0, self.hambre[i] - 12)
                     self.vivo[carroña] = False
                     self.pos[carroña, 1] = -50
                     self.estado[i] = COMER
+                    rap_obj = 0.0
             elif e.dieta in ("hierba", "nectar", "omni") and self.hambre[i] > 5:
                 self.estado[i] = COMER
                 self.hambre[i] = max(0.0, self.hambre[i] - dt * 7.0)
                 if rng.random() < 0.004:
                     self._reproducir(i)
-                if rng.random() < 0.35:
-                    dest = self.pos[i] + rng.normal(0, 2.5, 3)
+                # Pastan: se quedan, miran y dan un paso de vez en cuando.
+                if rng.random() < 0.015:
+                    dest = self.pos[i] + rng.normal(0, 1.4, 3)
+                    rap_obj *= 0.35
+                else:
+                    rap_obj = 0.0
+                    self.yaw_obj[i] += (rng.random() - 0.5) * 1.6 * dt
             else:
                 self.estado[i] = WANDER
-                if self.cd[i] <= 0:
-                    dest = self.pos[i] + rng.normal(0, 6, 3)
-                    self.cd[i] = float(rng.uniform(1.2, 3.0))
+                if self.cd[i] <= 0 and rng.random() < 0.012:
+                    self.cd[i] = float(rng.uniform(0.6, 1.8))
+                    rap_obj = 0.0
+                    self.yaw_obj[i] += (rng.random() - 0.5) * 2.4
+                else:
+                    self.wander_ang[i] += (rng.random() - 0.5) * 3.4 * dt
+                    fx, fz = float(np.cos(self.yaw[i])), float(np.sin(self.yaw[i]))
+                    dest = self.pos[i] + np.array(
+                        (fx * 3.8 + np.cos(self.wander_ang[i]) * 1.8,
+                         0.0,
+                         fz * 3.8 + np.sin(self.wander_ang[i]) * 1.8),
+                        np.float32,
+                    )
+                    rap_obj *= 0.72
 
-            if dest is not None:
-                dir3 = dest - self.pos[i]
+            deseada = np.zeros(3, np.float32)
+            if dest is not None and rap_obj > 0.02:
+                dir3 = np.asarray(dest, np.float32) - self.pos[i]
                 dir3[1] = 0
                 nrm = float(np.linalg.norm(dir3))
-                if nrm > 0.05:
+                if nrm > 0.08:
                     dir3 /= nrm
-                    self.yaw[i] = float(np.arctan2(dir3[2], dir3[0]))
-                    rap = e.vel * vel_clima * (1.45 if self.estado[i] == HUIR else 1.0)
-                    self.pos[i, 0] += dir3[0] * rap * dt
-                    self.pos[i, 2] += dir3[2] * rap * dt
+                    self.yaw_obj[i] = float(np.arctan2(dir3[2], dir3[0]))
+                    deseada[0] = dir3[0] * rap_obj
+                    deseada[2] = dir3[2] * rap_obj
 
-            self.pos[i, 0] = float(np.clip(self.pos[i, 0], 1.2, w - 2.2))
-            self.pos[i, 2] = float(np.clip(self.pos[i, 2], 1.2, d - 2.2))
-            self._poner_altura(i, e, suelo, agua)
+            # Inercia: no arrancan ni frenan de golpe.
+            accel = 5.5 if self.estado[i] == HUIR else 3.2
+            self.vel[i] += (deseada - self.vel[i]) * min(1.0, accel * dt)
+            if e.nombre in ("Rana", "Conejo", "Ratón"):
+                # Saltos: impulsos cortos, no un desliz continuo.
+                impulso = 1.75 if e.nombre == "Rana" else 1.42
+                espera = 0.58 if e.nombre == "Rana" else 0.36
+                if self.salto[i] <= 0 and float(np.linalg.norm(deseada)) > 0.15:
+                    self.vel[i] = deseada * impulso
+                    self.salto[i] = espera
+                elif self.salto[i] > espera * 0.45:
+                    self.vel[i] *= 0.90
+                else:
+                    self.vel[i] *= 0.48
 
-    def _poner_altura(self, i, e, suelo, agua):
+            self.pos[i, 0] = float(np.clip(self.pos[i, 0] + self.vel[i, 0] * dt, 1.2, w - 2.2))
+            self.pos[i, 2] = float(np.clip(self.pos[i, 2] + self.vel[i, 2] * dt, 1.2, d - 2.2))
+            self.rapidez[i] = float(np.hypot(self.vel[i, 0], self.vel[i, 2]))
+            self.yaw[i] = _lerp_ang(self.yaw[i], self.yaw_obj[i], min(1.0, 7.0 * dt))
+            self.yaw[i] = (self.yaw[i] + np.pi) % (2 * np.pi) - np.pi
+            self.fase[i] += dt * (2.4 + self.rapidez[i] * 3.6)
+            self._asentar(i, e, suelo, agua, dt)
+
+    def _asentar(self, i, e, suelo, agua, dt):
         xi = int(np.clip(self.pos[i, 0], 0, suelo.shape[0] - 1))
         zi = int(np.clip(self.pos[i, 2], 0, suelo.shape[1] - 1))
         base = float(suelo[xi, zi])
         if self.estado[i] == MUERTO:
-            self.pos[i, 1] = base + 0.02
-            return
-        if e.vuela:
-            techo = base + 5.2
-            self.pos[i, 1] += (techo - 1.2 - self.pos[i, 1]) * 0.04
-            self.pos[i, 1] = float(np.clip(self.pos[i, 1], base + 1.4, techo))
+            objetivo = base + 0.02
+        elif e.vuela:
+            oleaje = 0.45 * np.sin(self.fase[i] * 0.7) + 0.18 * np.sin(self.fase[i] * 1.7)
+            objetivo = float(np.clip(base + 3.6 + oleaje, base + 1.6, base + 5.4))
         elif e.nombre == "Pez":
             if agua[xi, zi] > 0:
-                self.pos[i, 1] = max(base - 0.15, 0.35) + 0.25 * np.sin(self.fase[i])
+                objetivo = max(base - 0.15, 0.35) + 0.18 * np.sin(self.fase[i])
             else:
-                self.pos[i, 1] = base + 0.05
+                objetivo = base + 0.05
         elif e.nada and agua[xi, zi] > 0:
-            self.pos[i, 1] = max(base, float(agua[xi, zi]) - 0.15)
+            objetivo = max(base, float(agua[xi, zi]) - 0.12) + 0.06 * np.sin(self.fase[i] * 0.8)
         else:
-            self.pos[i, 1] = base
+            objetivo = base
+        if e.nombre in ("Rana", "Conejo", "Ratón") and self.estado[i] != MUERTO and self.salto[i] > 0:
+            dur = 0.58 if e.nombre == "Rana" else 0.36
+            arco = float(np.sin(np.clip(1.0 - self.salto[i] / dur, 0.0, 1.0) * np.pi))
+            objetivo += arco * (0.30 if e.nombre == "Rana" else 0.14)
+        self.y_suelo[i] = objetivo
+        k = 14.0 if not e.vuela else 3.2
+        self.pos[i, 1] += (objetivo - self.pos[i, 1]) * min(1.0, k * dt)
 
     def _reproducir(self, i):
         e = ESPECIES[int(self.esp[i])]
@@ -446,10 +512,13 @@ class Fauna:
 
     def _agregar(self, tipo, pos):
         e = ESPECIES[tipo]
+        yaw0 = np.float32(self.rng.random() * 6.28)
         self.esp = np.append(self.esp, np.int32(tipo))
         self.pos = np.vstack([self.pos, pos.astype(np.float32)])
         self.vel = np.vstack([self.vel, np.zeros(3, np.float32)])
-        self.yaw = np.append(self.yaw, np.float32(self.rng.random() * 6.28))
+        self.yaw = np.append(self.yaw, yaw0)
+        self.yaw_obj = np.append(self.yaw_obj, yaw0)
+        self.wander_ang = np.append(self.wander_ang, yaw0)
         self.hambre = np.append(self.hambre, np.float32(3.0))
         self.vida = np.append(self.vida, np.float32(e.vida))
         self.estado = np.append(self.estado, np.int32(WANDER))
@@ -457,6 +526,9 @@ class Fauna:
         self.cd = np.append(self.cd, np.float32(2.0))
         self.objetivo = np.append(self.objetivo, np.int32(-1))
         self.vivo = np.append(self.vivo, True)
+        self.rapidez = np.append(self.rapidez, np.float32(0.0))
+        self.y_suelo = np.append(self.y_suelo, np.float32(pos.astype(np.float32)[1]))
+        self.salto = np.append(self.salto, np.float32(0.0))
         self.n = len(self.esp)
 
     def conteo(self):
@@ -488,13 +560,25 @@ class Fauna:
             fase = self.fase[idx]
             c, s = np.cos(yaw), np.sin(yaw)
             esc = e.escala * np.where(muerto, 0.35, 1.0)
-            bob = np.where(muerto, 0.0, 0.03 * np.sin(fase))
+            rap = self.rapidez[idx]
+            # Paso: trote, salto o aleteo según la especie.
+            if e.nombre in ("Conejo", "Rana", "Ratón"):
+                ciclo = np.abs(np.sin(fase))
+                bob = np.where(muerto, 0.0, ciclo * np.clip(rap * 0.12, 0.02, 0.16))
+            elif e.vuela:
+                bob = np.where(muerto, 0.0, 0.08 * np.sin(fase * 2.2) + 0.03 * np.sin(fase * 5.1))
+            elif e.nombre == "Pez":
+                bob = np.where(muerto, 0.0, 0.04 * np.sin(fase * 2.0))
+            else:
+                bob = np.where(muerto, 0.0, 0.045 * np.sin(fase * 2.0) * np.clip(rap * 0.35, 0.15, 1.2))
+            roll = np.where(muerto, 0.0, 0.07 * np.sin(fase) * np.clip(rap * 0.25, 0.0, 1.0))
             # (N, V, 3)
             bp = base_p[None, :, :] * esc[:, None, None]
+            # Ligero balanceo al caminar (eje X local).
+            y_loc = bp[..., 1] + bp[..., 0] * roll[:, None]
             x = bp[..., 0] * c[:, None] - bp[..., 2] * s[:, None]
             z = bp[..., 0] * s[:, None] + bp[..., 2] * c[:, None]
-            y = bp[..., 1]
-            y = y + P[:, 1, None] + bob[:, None]
+            y = y_loc + P[:, 1, None] + bob[:, None]
             x = x + P[:, 0, None]
             z = z + P[:, 2, None]
             world = np.stack([x, y, z], axis=-1).reshape(-1, 3)

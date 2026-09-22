@@ -1,0 +1,37 @@
+# Entorno y dependencias
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Modelos descargados en runtime (MediaPipe)
+modelos/*.task
+modelos/*.part
+
+# Partidas y capturas locales
+mundo_guardado.npy
+captura*.png
+*.log
+
+# Editores y sistema
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Cachés de herramientas
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
